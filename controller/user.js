@@ -40,8 +40,8 @@ export const verifyUser=TryCatch(async(req,res)=>{
         });
         res.cookie("jwt", token, {
             httpOnly: true,
-            secure: process.env.NODE_ENV !== "development",
-            sameSite: "Strict",
+            secure: true,
+            sameSite: "None",
             maxAge: 30 * 24 * 60 * 60 * 1000,
         });
         await haveOtp.deleteOne();
@@ -60,8 +60,8 @@ export const verifyUser=TryCatch(async(req,res)=>{
         })
         res.cookie("jwt", token, {
             httpOnly: true,
-            secure: process.env.NODE_ENV !== "development",
-            sameSite: "Strict",
+            secure: true,
+            sameSite: "None",
             maxAge: 30 * 24 * 60 * 60 * 1000,
         });
         await haveOtp.deleteOne();
@@ -81,8 +81,8 @@ export const myProfile=TryCatch(async(req,res)=>{
 export const logoutUser = TryCatch(async (req, res) => {
     res.cookie("jwt", "", {
       httpOnly: true,
-      secure: process.env.NODE_ENV !== "development", // VERY important for production
-      sameSite: "Strict", // or "Lax" if you're using cross-origin
+      secure: true, // VERY important for production
+      sameSite: "None", // or "Lax" if you're using cross-origin
       expires: new Date(0), // expire immediately
     });
   
