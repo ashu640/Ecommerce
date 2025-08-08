@@ -29,8 +29,9 @@ function reloadWebsite() {
   setInterval(reloadWebsite, interval);
 app.use(express.json());
 app.use(cors({
-  origin: 'https://ecommerce-15v7.onrender.com', 
-  credentials: true,              
+  origin: "https://ecommerce-frontend-sand-ten.vercel.app",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  credentials: true
 }));
 app.use(cookieParser());
 
