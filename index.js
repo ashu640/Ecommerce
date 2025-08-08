@@ -4,7 +4,7 @@ import connectDb from './utils/db.js';
 import cloudinary from 'cloudinary';
 import cors from 'cors';
 import axios from 'axios'
-
+import cookieParser from 'cookie-parser';
 dotenv.config()
 cloudinary.v2.config({
     cloud_name: process.env.CLOUD_NAME, 
@@ -28,7 +28,11 @@ function reloadWebsite() {
   
   setInterval(reloadWebsite, interval);
 app.use(express.json());
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:5173', 
+  credentials: true,              
+}));
+app.use(cookieParser());
 
 //importing routes
 import userRoutes from'./routes/user.js';

@@ -91,7 +91,7 @@ export const getSingleProduct = TryCatch(async (req, res) => {
 
     const relatedProduct = await Product.find({
         category: product.category,
-        _id: { $ne: product._id },
+        _id: { $ne: product._id },//exclude current one 
     }).limit(4);
 
     res.json({ product, relatedProduct });

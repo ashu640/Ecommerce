@@ -37,11 +37,16 @@ export const verifyUser=TryCatch(async(req,res)=>{
     if(user){
         const token=jwt.sign({_id:user._id},process.env.JWT_SEC,{
             expiresIn:"15d",
-        })
+        });
+        res.cookie("jwt", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV !== "development",
+            sameSite: "Strict",
+            maxAge: 30 * 24 * 60 * 60 * 1000,
+        });
         await haveOtp.deleteOne();
         res.json({
             message:"User LoggedIn",
-            token,
             user,
 
         });
@@ -50,13 +55,18 @@ export const verifyUser=TryCatch(async(req,res)=>{
             email,
 
         });
-        const token=jwt.sign({_id:User._id},process.env.JWT_SEC,{
+        const token=jwt.sign({_id:user._id},process.env.JWT_SEC,{
             expiresIn:"15d",
         })
+        res.cookie("jwt", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV !== "development",
+            sameSite: "Strict",
+            maxAge: 30 * 24 * 60 * 60 * 1000,
+        });
         await haveOtp.deleteOne();
         res.json({
             message:"user LoggedIn",
-            token,
             user,  
 
         });
@@ -66,4 +76,16 @@ export const verifyUser=TryCatch(async(req,res)=>{
 export const myProfile=TryCatch(async(req,res)=>{
     const user=await User.findById(req.user._id)
     res.json(user);
-})
+});
+
+export const logoutUser = TryCatch(async (req, res) => {
+    res.cookie("jwt", "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV !== "development", // VERY important for production
+      sameSite: "Strict", // or "Lax" if you're using cross-origin
+      expires: new Date(0), // expire immediately
+    });
+  
+    res.status(200).json({ message: "User logged out successfully" });
+  });
+  
