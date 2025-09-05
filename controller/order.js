@@ -1,6 +1,7 @@
 import { Cart } from "../model/cart.js";
 import { Order } from "../model/order.js";
 import { Product } from "../model/product.js";
+import { Address } from "../model/address.js"; // ✅ Import Address model
 import sendOrderCancellation from "../utils/sendOrderCancellation.js";
 import sendOrderConfiramtion from "../utils/sendOrderconfirmation.js";
 import TryCatch from "../utils/trycatch.js";
@@ -8,13 +9,17 @@ import Stripe from "stripe";
 
 // ================= COD ORDER =================
 export const newOrderCod = TryCatch(async (req, res) => {
-  const { method, phone, address } = req.body;
+  const { method, addressId } = req.body; // ✅ Get addressId instead of raw phone/address
   const cart = await Cart.find({ user: req.user._id }).populate({
     path: "product",
     select: "title price",
   });
 
   if (!cart.length) return res.status(400).json({ message: "cart is empty" });
+
+  // ✅ Validate Address
+  const address = await Address.findOne({ _id: addressId, user: req.user._id });
+  if (!address) return res.status(404).json({ message: "Address not found" });
 
   let subTotal = 0;
   const items = cart.map((i) => {
@@ -33,8 +38,7 @@ export const newOrderCod = TryCatch(async (req, res) => {
     items,
     method,
     user: req.user._id,
-    phone,
-    address,
+    address: address._id, // ✅ Reference address
     subTotal,
   });
 
@@ -65,24 +69,28 @@ export const newOrderCod = TryCatch(async (req, res) => {
 
 // ================= GET ORDERS =================
 export const getAllOrders = TryCatch(async (req, res) => {
-  const orders = await Order.find({
-    user: req.user._id,
-  });
-  res.json({ orders: orders.reverse() });
+  const orders = await Order.find({ user: req.user._id })
+    .populate("address") // ✅ Populate address details
+    .sort({ createdAt: -1 });
+  res.json({ orders });
 });
 
 export const getAllOrdersAdmin = TryCatch(async (req, res) => {
   if (req.user.role !== "admin")
     return res.status(403).json({ message: "you are not admin" });
 
-  const orders = await Order.find().populate("user").sort({ createdAt: -1 });
+  const orders = await Order.find()
+    .populate("user")
+    .populate("address") // ✅ Populate address
+    .sort({ createdAt: -1 });
   res.json(orders);
 });
 
 export const getMyOrder = TryCatch(async (req, res) => {
   const order = await Order.findById(req.params.id)
     .populate("items.product")
-    .populate("user");
+    .populate("user")
+    .populate("address"); // ✅ Populate address
   res.json(order);
 });
 
@@ -91,7 +99,10 @@ export const updateStatus = TryCatch(async (req, res) => {
   if (req.user.role !== "admin")
     return res.status(403).json({ message: "you are not admin" });
 
-  const order = await Order.findById(req.params.id).populate("user").populate("items.product");
+  const order = await Order.findById(req.params.id)
+    .populate("user")
+    .populate("items.product")
+    .populate("address"); // ✅ Populate address
   const { status } = req.body;
 
   if (!order) return res.status(404).json({ message: "Order not found" });
@@ -101,14 +112,16 @@ export const updateStatus = TryCatch(async (req, res) => {
 
   // ✅ If admin cancels, send email to both
   if (status === "cancelled") {
-    const items = order.items.map(i => ({
+    const items = order.items.map((i) => ({
       product: i.product._id,
       name: i.product.title.en,
       price: i.product.price,
       quantity: i.quantity,
     }));
 
-    const subTotal = order.subTotal || items.reduce((acc, i) => acc + i.price * i.quantity, 0);
+    const subTotal =
+      order.subTotal ||
+      items.reduce((acc, i) => acc + i.price * i.quantity, 0);
 
     // Send to user
     await sendOrderCancellation({
@@ -137,21 +150,20 @@ export const updateStatus = TryCatch(async (req, res) => {
   });
 });
 
-
 // ================= CANCEL ORDER =================
-
 export const cancelOrder = TryCatch(async (req, res) => {
   const order = await Order.findById(req.params.id)
     .populate("user")
-    .populate("items.product");
-    console.log(order.items)
+    .populate("items.product")
+    .populate("address"); // ✅ Populate address
+  console.log(order.items);
 
   if (!order) return res.status(404).json({ message: "Order not found" });
-  console.log(process.env.admin_email)
-  if (
-    order.user._id.toString() !== req.user._id.toString()
-  ) {
-    return res.status(403).json({ message: "Not authorized to cancel this order" });
+  console.log(process.env.admin_email);
+  if (order.user._id.toString() !== req.user._id.toString()) {
+    return res
+      .status(403)
+      .json({ message: "Not authorized to cancel this order" });
   }
 
   if (order.status === "shipped" || order.status === "delivered") {
@@ -168,15 +180,17 @@ export const cancelOrder = TryCatch(async (req, res) => {
   await order.save();
 
   // ✅ Extract items + subtotal safely
-  const items = order.items.map(i => ({
+  const items = order.items.map((i) => ({
     product: i.product._id,
     name: i.product.title.en,
     price: i.product.price,
     quantity: i.quantity,
   }));
 
-  const subTotal = order.subTotal || items.reduce((acc, i) => acc + i.price * i.quantity, 0);
-  console.log(order.user.email)
+  const subTotal =
+    order.subTotal ||
+    items.reduce((acc, i) => acc + i.price * i.quantity, 0);
+  console.log(order.user.email);
   await sendOrderCancellation({
     email: order.user.email,
     subject: "Order Cancelled",
@@ -185,7 +199,7 @@ export const cancelOrder = TryCatch(async (req, res) => {
     totalAmount: subTotal,
     extraMessage: "Your order has been cancelled.",
   });
-console.log(process.env.admin_email)
+  console.log(process.env.admin_email);
   await sendOrderCancellation({
     email: process.env.admin_email,
     subject: "Order Cancelled by User/Admin",
@@ -203,12 +217,16 @@ const stripe = new Stripe(process.env.Stripe_Secret_key);
 
 export const newOrderOnline = async (req, res) => {
   try {
-    const { method, phone, address } = req.body;
+    const { method, addressId } = req.body; // ✅ Use addressId
     const cart = await Cart.find({ user: req.user._id }).populate("product");
 
     if (!cart.length) {
       return res.status(400).json({ message: "cart is empty" });
     }
+
+    // ✅ Validate Address
+    const address = await Address.findOne({ _id: addressId, user: req.user._id });
+    if (!address) return res.status(404).json({ message: "Address not found" });
 
     const subTotal = cart.reduce(
       (total, item) => total + item.product.price * item.quantity,
@@ -235,8 +253,7 @@ export const newOrderOnline = async (req, res) => {
       cancel_url: `${process.env.Frontend_Url}/cart`,
       metadata: {
         userId: req.user._id.toString(),
-        phone,
-        address,
+        addressId, // ✅ Store address reference in metadata
         subTotal,
         method,
       },
@@ -261,7 +278,11 @@ export const verifyPayment = async (req, res) => {
       return res.status(400).json({ message: "Payment not completed" });
     }
 
-    const { userId, phone, address, method } = session.metadata;
+    const { userId, addressId, method } = session.metadata;
+
+    // ✅ Validate Address
+    const address = await Address.findOne({ _id: addressId, user: userId });
+    if (!address) return res.status(404).json({ message: "Address not found" });
 
     const cart = await Cart.find({ user: userId }).populate("product");
 
@@ -301,8 +322,7 @@ export const verifyPayment = async (req, res) => {
       items,
       method,
       user: userId,
-      address,
-      phone,
+      address: address._id, // ✅ Save reference
       subTotal: backendSubTotal,
       paidAt: new Date(),
       paymentInfo: sessionId,
@@ -368,10 +388,11 @@ export const getLastOrderUpdate = TryCatch(async (req, res) => {
   }
 
   // Get the latest updated order
-  const lastUpdatedOrder = await Order.findOne().sort({ updatedAt: -1 }).select("updatedAt");
+  const lastUpdatedOrder = await Order.findOne()
+    .sort({ updatedAt: -1 })
+    .select("updatedAt");
 
   res.json({
     lastUpdate: lastUpdatedOrder ? lastUpdatedOrder.updatedAt : null,
   });
 });
-
