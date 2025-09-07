@@ -15,6 +15,7 @@ export const addAddress = TryCatch(async (req, res) => {
     country,
     isDefault,
   } = req.body;
+  console.log(req.body)
 
   // If user marks this as default, unset other default addresses
   if (isDefault) {
