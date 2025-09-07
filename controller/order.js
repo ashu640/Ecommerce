@@ -13,13 +13,21 @@ const stripe = new Stripe(process.env.Stripe_Secret_key, {
 
 // ================= COD ORDER =================
 export const newOrderCod = TryCatch(async (req, res) => {
+  console.log("⚡ COD Order triggered");
+
   const { method, addressId } = req.body;
   const cart = await Cart.find({ user: req.user._id }).populate("product");
 
-  if (!cart.length) return res.status(400).json({ message: "Cart is empty" });
+  if (!cart.length) {
+    console.warn("⚠️ Cart is empty");
+    return res.status(400).json({ message: "Cart is empty" });
+  }
 
   const address = await Address.findOne({ _id: addressId, user: req.user._id });
-  if (!address) return res.status(404).json({ message: "Address not found" });
+  if (!address) {
+    console.warn("⚠️ Address not found");
+    return res.status(404).json({ message: "Address not found" });
+  }
 
   let subTotal = 0;
   const items = cart.map((i) => {
@@ -31,6 +39,8 @@ export const newOrderCod = TryCatch(async (req, res) => {
       quantity: i.quantity,
     };
   });
+
+  console.log("🔹 Creating COD order with items:", items);
 
   const order = await Order.create({
     items,
@@ -47,10 +57,12 @@ export const newOrderCod = TryCatch(async (req, res) => {
       product.stock -= i.quantity;
       product.sold += i.quantity;
       await product.save();
+      console.log(`🔹 Updated product ${product._id}: stock=${product.stock}, sold=${product.sold}`);
     }
   }
 
   await Cart.deleteMany({ user: req.user._id });
+  console.log("🗑️ Cart cleared after COD order");
 
   await sendOrderConfiramtion({
     email: req.user.email,
@@ -60,6 +72,7 @@ export const newOrderCod = TryCatch(async (req, res) => {
     totalAmount: subTotal,
   });
 
+  console.log("✅ COD Order created successfully:", order._id);
   res.json({ message: "Order created successfully", order });
 });
 
@@ -108,6 +121,7 @@ export const updateStatus = TryCatch(async (req, res) => {
   order.status = req.body.status;
   await order.save();
 
+  console.log(`🔹 Order ${order._id} status updated to ${order.status}`);
   res.json({ message: "Order status updated", order });
 });
 
@@ -123,20 +137,22 @@ export const cancelOrder = TryCatch(async (req, res) => {
     return res.status(403).json({ message: "Not authorized" });
 
   if (["shipped", "delivered"].includes(order.status))
-    return res
-      .status(400)
-      .json({ message: "Cannot cancel shipped/delivered order" });
+    return res.status(400).json({ message: "Cannot cancel shipped/delivered order" });
 
   order.status = "cancelled";
   await order.save();
 
+  await sendOrderCancellation({ email: order.user.email, orderId: order._id });
+
+  console.log("🔹 Order cancelled successfully:", order._id);
   res.json({ message: "Order cancelled successfully", order });
 });
 
 // ================= STRIPE CHECKOUT =================
 export const newOrderOnline = TryCatch(async (req, res) => {
-  const { method, addressId } = req.body;
+  console.log("⚡ Stripe Online Order triggered");
 
+  const { method, addressId } = req.body;
   const cart = await Cart.find({ user: req.user._id }).populate("product");
   if (!cart.length) return res.status(400).json({ message: "Cart is empty" });
 
@@ -146,13 +162,15 @@ export const newOrderOnline = TryCatch(async (req, res) => {
   const lineItems = cart.map((item) => ({
     price_data: {
       currency: "inr",
-      product_data: { name: item.product.title.en ,
-        images: [item.product.images[0].url],},
+      product_data: {
+        name: item.product.title.en,
+        images: [item.product.images[0].url],
+      },
       unit_amount: Math.round(item.product.price * 100),
     },
     quantity: item.quantity,
   }));
-   //create session
+
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
     line_items: lineItems,
@@ -162,43 +180,45 @@ export const newOrderOnline = TryCatch(async (req, res) => {
     metadata: { userId: req.user._id.toString(), addressId, method },
   });
 
+  console.log("🔹 Stripe session created:", session.id);
   res.json({ url: session.url });
 });
 
-// ================= STRIPE WEBHOOK =================
+// ================= STRIPE WEBHOOK WITH FULL LOGGING =================
 export const stripeWebhook = async (req, res) => {
+  console.log("⚡ Webhook triggered");
+
   let event;
-
   try {
-    // Stripe sends raw body as text
-    const sig = req.headers["stripe-signature"]; // correct in Express
-    const rawBody = req.body; // express.raw gives raw buffer
+    const sig = req.headers["stripe-signature"];
+    const rawBody = req.body;
 
-    event = stripe.webhooks.constructEvent(
-      rawBody,
-      sig,
-      process.env.Stripe_Webhook_Key
-    );
+    console.log("🔹 Verifying webhook signature");
+    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.Stripe_Webhook_Key);
+    console.log("✅ Webhook verified successfully:", event.type);
   } catch (err) {
-    console.log("Webhook signature verification failed:", err.message);
+    console.error("❌ Webhook signature verification failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   try {
-    // Handle the event
+    console.log("🔹 Handling event:", event.type);
+
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
+        console.log("💳 Payment completed. Session ID:", session.id);
+        console.log("📦 Metadata:", session.metadata);
+
         const { userId, addressId, method } = session.metadata;
 
-        // Fetch user's cart
         const cart = await Cart.find({ user: userId }).populate("product");
         if (!cart.length) {
-          console.log("Cart is empty or already processed");
+          console.warn("⚠️ Cart is empty or already processed for user:", userId);
           return res.status(400).send("Cart is empty or already processed");
         }
+        console.log(`🛒 Cart found with ${cart.length} items`);
 
-        // Recompute subtotal and build items array
         let subTotal = 0;
         const items = cart.map((i) => {
           subTotal += i.product.price * i.quantity;
@@ -209,16 +229,18 @@ export const stripeWebhook = async (req, res) => {
             quantity: i.quantity,
           };
         });
+        console.log("🔹 Computed order items:", items);
+        console.log("🔹 Subtotal:", subTotal);
 
-        // Prevent duplicate order creation
         const existingOrder = await Order.findOne({ paymentInfo: session.id });
         if (existingOrder) {
-          console.log("Order already exists for this session:", session.id);
+          console.warn("⚠️ Order already exists for this session:", session.id);
           return res.json({ received: true });
         }
 
-        // Create order
         const address = await Address.findById(addressId);
+        if (!address) console.warn("⚠️ Address not found:", addressId);
+
         const order = await Order.create({
           items,
           method,
@@ -229,50 +251,59 @@ export const stripeWebhook = async (req, res) => {
           paidAt: new Date(),
           paymentInfo: session.id,
         });
+        console.log("✅ Order created:", order._id);
 
-        // Update product stock and sold count
+        console.log("🔹 Updating product stock and sold count");
         for (let i of order.items) {
           const product = await Product.findById(i.product);
           if (product) {
+            console.log(
+              `   - Updating product ${product._id}: stock ${product.stock} -> ${product.stock - i.quantity}, sold ${product.sold} -> ${product.sold + i.quantity}`
+            );
             product.stock -= i.quantity;
             product.sold += i.quantity;
             await product.save();
+          } else {
+            console.warn("⚠️ Product not found in DB:", i.product);
           }
         }
 
-        // Clear cart
+        console.log("🔹 Clearing cart for user:", userId);
         await Cart.deleteMany({ user: userId });
 
-        console.log("Order created successfully for session:", session.id);
+        console.log("🎉 Webhook processing completed for session:", session.id);
         break;
       }
 
       case "checkout.session.async_payment_failed":
       case "payment_intent.payment_failed":
-        console.log("Payment failed for session:", event.data.object.id);
+        console.warn("❌ Payment failed for session:", event.data.object.id);
         return res.status(400).send("Payment failed");
 
       default:
-        console.log(`Unhandled event type ${event.type}`);
+        console.log(`⚠️ Unhandled event type: ${event.type}`);
         break;
     }
 
-    // Respond to Stripe that the webhook was received
+    console.log("🔹 Sending response to Stripe");
     res.json({ received: true });
   } catch (error) {
-    console.log("Error processing webhook:", error.message);
+    console.error("❌ Error processing webhook:", error.message);
     res.status(500).send("Internal Server Error");
   }
 };
-
 
 // ================= STATUS CHECK =================
 export const getOrderStatus = TryCatch(async (req, res) => {
   const { sessionId } = req.params;
   const order = await Order.findOne({ paymentInfo: sessionId });
 
-  if (!order) return res.json({ success: false, reason: "Order not created yet" });
+  if (!order) {
+    console.warn("⚠️ Order not created yet for session:", sessionId);
+    return res.json({ success: false, reason: "Order not created yet" });
+  }
 
+  console.log("🔹 Order found for session:", sessionId);
   res.json({ success: true, order });
 });
 
@@ -286,6 +317,7 @@ export const getStats = TryCatch(async (req, res) => {
     { $group: { _id: null, total: { $sum: "$subTotal" } } },
   ]);
 
+  console.log("🔹 Stats fetched: totalOrders =", totalOrders, ", totalRevenue =", totalRevenue[0]?.total || 0);
   res.json({
     totalOrders,
     totalRevenue: totalRevenue[0]?.total || 0,
