@@ -29,7 +29,7 @@ function reloadWebsite() {
   setInterval(reloadWebsite, interval);
 app.use(express.json());
 app.use(cors({
-  origin: "https://ecommerce-frontend-sand-ten.vercel.app/",
+  origin: "https://ecommerce-frontend-sand-ten.vercel.app",
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
