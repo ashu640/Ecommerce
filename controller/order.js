@@ -171,11 +171,11 @@ export const stripeWebhook = async (req, res) => {
 
   try {
     // Stripe sends raw body as text
-    const body = await req.text();
-    const sig = req.headers.get("stripe-signature");
+    const sig = req.headers["stripe-signature"]; // correct in Express
+    const rawBody = req.body; // express.raw gives raw buffer
 
     event = stripe.webhooks.constructEvent(
-      body,
+      rawBody,
       sig,
       process.env.Stripe_Webhook_Key
     );
