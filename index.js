@@ -27,6 +27,11 @@ function reloadWebsite() {
   }
   
   setInterval(reloadWebsite, interval);
+app.post(
+    '/api/webhook',
+    express.raw({ type: 'application/json' }),
+    stripeWebhook
+  );
 app.use(express.json());
 app.use(cors({
   origin: "https://ecommerce-frontend-sand-ten.vercel.app",
@@ -42,6 +47,7 @@ import cartRoutes from './routes/cart.js';
 import addressRoutes from './routes/address.js';
 import orderRoutes from './routes/order.js';
 import catalogueRoutes from './routes/catalogue.js';
+import { stripeWebhook } from './controller/order.js';
 
 //using routes
 app.use('/api',userRoutes);

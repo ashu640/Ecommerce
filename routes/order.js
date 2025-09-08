@@ -29,16 +29,12 @@ router.put("/order/:id/status", isAuth, updateStatus);
 router.post("/order/:id/cancel", isAuth, cancelOrder);
 
 // ================== Stats ==================
-router.get("/stats", isAuth, getStats);
+router.get("/order/stats", isAuth, getStats);
 
 // ================== Payment Status ==================
 router.get("/order/status/:sessionId", isAuth, getOrderStatus);
 
-// ================== Stripe Webhook ==================
-router.post(
-  "/webhook",
-  express.raw({ type: "application/json" }), // Stripe needs raw body
-  stripeWebhook
-);
+
+
 
 export default router;
