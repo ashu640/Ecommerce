@@ -191,7 +191,7 @@ export const stripeWebhook = async (req, res) => {
   let event;
   try {
     const sig = req.headers["stripe-signature"];
-    const rawBody = req.body;
+    const rawBody = req.body; // NOTE: must be raw, handled by express.raw()
 
     console.log("🔹 Verifying webhook signature");
     event = stripe.webhooks.constructEvent(rawBody, sig, process.env.Stripe_Webhook_Key);
@@ -202,22 +202,26 @@ export const stripeWebhook = async (req, res) => {
   }
 
   try {
-    console.log("🔹 Handling event:", event.type);
-
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
-        console.log("💳 Payment completed. Session ID:", session.id);
-        console.log("📦 Metadata:", session.metadata);
+        console.log("💳 Checkout completed. Session ID:", session.id);
 
+        // Verify payment status
+        if (session.payment_status !== "paid") {
+          console.warn("⚠️ Session not fully paid:", session.id, "status:", session.payment_status);
+          break;
+        }
+
+        console.log("✅ Payment confirmed. Metadata:", session.metadata);
         const { userId, addressId, method } = session.metadata;
 
+        // Fetch cart
         const cart = await Cart.find({ user: userId }).populate("product");
         if (!cart.length) {
-          console.warn("⚠️ Cart is empty or already processed for user:", userId);
-          return res.status(400).send("Cart is empty or already processed");
+          console.warn("⚠️ Cart empty or already processed:", userId);
+          break;
         }
-        console.log(`🛒 Cart found with ${cart.length} items`);
 
         let subTotal = 0;
         const items = cart.map((i) => {
@@ -229,17 +233,15 @@ export const stripeWebhook = async (req, res) => {
             quantity: i.quantity,
           };
         });
-        console.log("🔹 Computed order items:", items);
-        console.log("🔹 Subtotal:", subTotal);
 
+        // Prevent duplicate order
         const existingOrder = await Order.findOne({ paymentInfo: session.id });
         if (existingOrder) {
-          console.warn("⚠️ Order already exists for this session:", session.id);
-          return res.json({ received: true });
+          console.warn("⚠️ Order already exists for session:", session.id);
+          break;
         }
 
         const address = await Address.findById(addressId);
-        if (!address) console.warn("⚠️ Address not found:", addressId);
 
         const order = await Order.create({
           items,
@@ -253,39 +255,40 @@ export const stripeWebhook = async (req, res) => {
         });
         console.log("✅ Order created:", order._id);
 
-        console.log("🔹 Updating product stock and sold count");
+        // Update stock
         for (let i of order.items) {
           const product = await Product.findById(i.product);
           if (product) {
-            console.log(
-              `   - Updating product ${product._id}: stock ${product.stock} -> ${product.stock - i.quantity}, sold ${product.sold} -> ${product.sold + i.quantity}`
-            );
             product.stock -= i.quantity;
             product.sold += i.quantity;
             await product.save();
-          } else {
-            console.warn("⚠️ Product not found in DB:", i.product);
           }
         }
 
-        console.log("🔹 Clearing cart for user:", userId);
+        // Clear cart
         await Cart.deleteMany({ user: userId });
-
-        console.log("🎉 Webhook processing completed for session:", session.id);
+        console.log("🎉 Order flow completed for session:", session.id);
         break;
       }
 
-      case "checkout.session.async_payment_failed":
-      case "payment_intent.payment_failed":
-        console.warn("❌ Payment failed for session:", event.data.object.id);
-        return res.status(400).send("Payment failed");
+      case "payment_intent.succeeded": {
+        const intent = event.data.object;
+        console.log("✅ PaymentIntent succeeded:", intent.id, "amount:", intent.amount);
+        break;
+      }
+
+      case "payment_intent.payment_failed": {
+        const intent = event.data.object;
+        console.warn("❌ PaymentIntent failed:", intent.id, "reason:", intent.last_payment_error?.message);
+        break;
+      }
 
       default:
         console.log(`⚠️ Unhandled event type: ${event.type}`);
         break;
     }
 
-    console.log("🔹 Sending response to Stripe");
+    // ✅ Always respond quickly
     res.json({ received: true });
   } catch (error) {
     console.error("❌ Error processing webhook:", error.message);

@@ -28,7 +28,7 @@ function reloadWebsite() {
   
   setInterval(reloadWebsite, interval);
 app.post(
-    '/api/webhook',
+    '/api/v1/webhook',
     express.raw({ type: 'application/json' }),
     stripeWebhook
   );
