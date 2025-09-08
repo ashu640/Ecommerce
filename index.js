@@ -5,6 +5,7 @@ import cloudinary from 'cloudinary';
 import cors from 'cors';
 import axios from 'axios'
 import cookieParser from 'cookie-parser';
+import { stripeWebhook } from './controller/order.js';
 dotenv.config()
 cloudinary.v2.config({
     cloud_name: process.env.CLOUD_NAME, 
@@ -26,7 +27,7 @@ function reloadWebsite() {
       });
   }
   
-  setInterval(reloadWebsite, interval);
+setInterval(reloadWebsite, interval);
 app.post(
     '/api/v1/webhook',
     express.raw({ type: 'application/json' }),
@@ -47,7 +48,7 @@ import cartRoutes from './routes/cart.js';
 import addressRoutes from './routes/address.js';
 import orderRoutes from './routes/order.js';
 import catalogueRoutes from './routes/catalogue.js';
-import { stripeWebhook } from './controller/order.js';
+
 
 //using routes
 app.use('/api',userRoutes);
