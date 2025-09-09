@@ -5,7 +5,6 @@ import cloudinary from 'cloudinary';
 import cors from 'cors';
 import axios from 'axios'
 import cookieParser from 'cookie-parser';
-import { stripeWebhook } from './controller/order.js';
 dotenv.config()
 cloudinary.v2.config({
     cloud_name: process.env.CLOUD_NAME, 
@@ -13,18 +12,6 @@ cloudinary.v2.config({
         api_secret: process.env.CLOUD_API_SECRET
 });
 const app=express();
-app.post(
-  '/api/v1/webhook',
-  express.raw({ type: 'application/json' }), // raw body only for this route
-  (req, res, next) => {
-    console.log("⚡ Incoming Webhook:");
-    console.log("🔹 Headers:", req.headers);
-    console.log("🔹 Body (raw length):", req.body.length || req.body);
-    next(); // pass to stripeWebhook
-  },
-  stripeWebhook
-);
-
 
 
 const url = `https://ecommerce-15v7.onrender.com`;
@@ -44,6 +31,7 @@ setInterval(reloadWebsite, interval);
 
 app.use(express.json());
 app.use(cors({
+  // origin: "https://ecommerce-frontend-sand-ten.vercel.app",
   origin: "https://ecommerce-frontend-sand-ten.vercel.app",
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true

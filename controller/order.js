@@ -88,12 +88,30 @@ export const getAllOrdersAdmin = TryCatch(async (req, res) => {
   if (req.user.role !== "admin")
     return res.status(403).json({ message: "You are not admin" });
 
+  // 1️⃣ Read page & limit from query (default: page=1, limit=10)
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+
+  // 2️⃣ Count total orders
+  const totalOrders = await Order.countDocuments();
+
+  // 3️⃣ Fetch orders with pagination
   const orders = await Order.find()
     .populate("user")
     .populate("address")
-    .sort({ createdAt: -1 });
-  res.json(orders);
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit) // skip previous pages
+    .limit(limit); // limit per page
+
+  // 4️⃣ Send response with pagination meta
+  res.json({
+    orders,
+    totalOrders,
+    totalPages: Math.ceil(totalOrders / limit),
+    currentPage: page,
+  });
 });
+
 
 export const getMyOrder = TryCatch(async (req, res) => {
   const order = await Order.findById(req.params.id)
@@ -118,14 +136,46 @@ export const updateStatus = TryCatch(async (req, res) => {
 
   if (!order) return res.status(404).json({ message: "Order not found" });
 
+  // Check if status is actually changing
+  if (order.status === req.body.status) {
+    return res.status(400).json({ message: `Order already ${order.status}` });
+  }
+
+  const isAdminCancelling = req.body.status === "cancelled";
+
   order.status = req.body.status;
   await order.save();
+
+  // Send emails if admin cancelled
+  if (isAdminCancelling) {
+    const products = order.items.map((i) => ({
+      name: i.product.title.en,
+      quantity: i.quantity,
+      price: i.product.price,
+    }));
+
+    await sendOrderCancellation({
+      email: order.user.email,
+      subject: "Your order has been cancelled by admin",
+      orderId: order._id,
+      products,
+      totalAmount: order.subTotal,
+    });
+
+    await sendOrderCancellation({
+      email: process.env.ADMIN_EMAIL,
+      subject: "Order Cancelled by Admin",
+      orderId: order._id,
+      products,
+      totalAmount: order.subTotal,
+    });
+  }
 
   console.log(`🔹 Order ${order._id} status updated to ${order.status}`);
   res.json({ message: "Order status updated", order });
 });
 
-// ================= CANCEL ORDER =================
+// ================= CANCEL ORDER (USER) =================
 export const cancelOrder = TryCatch(async (req, res) => {
   const order = await Order.findById(req.params.id)
     .populate("user")
@@ -133,8 +183,15 @@ export const cancelOrder = TryCatch(async (req, res) => {
     .populate("address");
 
   if (!order) return res.status(404).json({ message: "Order not found" });
+
+  // Only the user who made the order can cancel
   if (order.user._id.toString() !== req.user._id.toString())
     return res.status(403).json({ message: "Not authorized" });
+
+  // ✅ Already cancelled check
+  if (order.status === "cancelled") {
+    return res.status(400).json({ message: "Order is already cancelled" });
+  }
 
   if (["shipped", "delivered"].includes(order.status))
     return res.status(400).json({ message: "Cannot cancel shipped/delivered order" });
@@ -142,11 +199,38 @@ export const cancelOrder = TryCatch(async (req, res) => {
   order.status = "cancelled";
   await order.save();
 
-  await sendOrderCancellation({ email: order.user.email, orderId: order._id });
+  const products = order.items.map((i) => ({
+    name: i.product.title.en,
+    quantity: i.quantity,
+    price: i.product.price,
+  }));
 
-  console.log("🔹 Order cancelled successfully:", order._id);
-  res.json({ message: "Order cancelled successfully", order });
+  // Send emails to user and admin
+  await sendOrderCancellation({
+    email: order.user.email,
+    subject: "Your order has been cancelled",
+    orderId: order._id,
+    products,
+    totalAmount: order.subTotal,
+  });
+
+  await sendOrderCancellation({
+    email: process.env.ADMIN_EMAIL,
+    subject: "Order Cancelled by User",
+    orderId: order._id,
+    products,
+    totalAmount: order.subTotal,
+  });
+
+  console.log("🔹 Order cancelled successfully by user:", order._id);
+
+  res.json({
+    success: true,
+    message: "Order cancelled successfully",
+    order, // returning full order so frontend can render safely
+  });
 });
+
 
 // ================= STRIPE CHECKOUT =================
 export const newOrderOnline = TryCatch(async (req, res) => {
@@ -184,145 +268,114 @@ export const newOrderOnline = TryCatch(async (req, res) => {
   res.json({ url: session.url });
 });
 
-// ================= STRIPE WEBHOOK WITH FULL LOGGING =================
-export const stripeWebhook = async (req, res) => {
-  console.log("⚡ Webhook triggered");
 
-  let event;
-  try {
-    const sig = req.headers["stripe-signature"];
-    const rawBody = req.body; // NOTE: must be raw, handled by express.raw()
+// ================= VERIFY PAYMENT AFTER SUCCESS =================
+export const verifyStripePayment = TryCatch(async (req, res) => {
+  const { sessionId } = req.body;
+  if (!sessionId) return res.status(400).json({ message: "Session ID required" });
 
-    console.log("🔹 Verifying webhook signature");
-    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.Stripe_Webhook_Key);
-    console.log("✅ Webhook verified successfully:", event.type);
-  } catch (err) {
-    console.error("❌ Webhook signature verification failed:", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+  console.log("🔹 Verifying Stripe session:", sessionId);
+
+  // Fetch session from Stripe
+  const session = await stripe.checkout.sessions.retrieve(sessionId);
+  if (!session) return res.status(404).json({ message: "Session not found" });
+
+  if (session.payment_status !== "paid") {
+    console.warn("⚠️ Payment not successful for session:", sessionId);
+    return res.status(400).json({ message: "Payment not completed" });
   }
 
-  try {
-    switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object;
-        console.log("💳 Checkout completed. Session ID:", session.id);
+  const { userId, addressId, method } = session.metadata;
 
-        // Verify payment status
-        if (session.payment_status !== "paid") {
-          console.warn("⚠️ Session not fully paid:", session.id, "status:", session.payment_status);
-          break;
-        }
+  // Prevent duplicate order
+  const existingOrder = await Order.findOne({ paymentInfo: session.id });
+  if (existingOrder) {
+    console.log("⚠️ Order already exists for session:", session.id);
+    return res.json({ success: true, order: existingOrder });
+  }
 
-        console.log("✅ Payment confirmed. Metadata:", session.metadata);
-        const { userId, addressId, method } = session.metadata;
+  // Fetch cart
+  const cart = await Cart.find({ user: userId }).populate("product");
+  if (!cart.length) return res.status(400).json({ message: "Cart is empty" });
 
-        // Fetch cart
-        const cart = await Cart.find({ user: userId }).populate("product");
-        if (!cart.length) {
-          console.warn("⚠️ Cart empty or already processed:", userId);
-          break;
-        }
+  let subTotal = 0;
+  const items = cart.map((i) => {
+    subTotal += i.product.price * i.quantity;
+    return {
+      product: i.product._id,
+      name: i.product.title.en,
+      price: i.product.price,
+      quantity: i.quantity,
+    };
+  });
 
-        let subTotal = 0;
-        const items = cart.map((i) => {
-          subTotal += i.product.price * i.quantity;
-          return {
-            product: i.product._id,
-            name: i.product.title.en,
-            price: i.product.price,
-            quantity: i.quantity,
-          };
-        });
+  const address = await Address.findById(addressId);
 
-        // Prevent duplicate order
-        const existingOrder = await Order.findOne({ paymentInfo: session.id });
-        if (existingOrder) {
-          console.warn("⚠️ Order already exists for session:", session.id);
-          break;
-        }
+  // Create order
+  const order = await Order.create({
+    items,
+    method,
+    user: userId,
+    address: addressId,
+    phone: address?.phone || "",
+    subTotal,
+    paidAt: new Date(),
+    paymentInfo: session.id,
+  });
 
-        const address = await Address.findById(addressId);
+  console.log("✅ Order created:", order._id);
 
-        const order = await Order.create({
-          items,
-          method,
-          user: userId,
-          address: addressId,
-          phone: address?.phone || "",
-          subTotal,
-          paidAt: new Date(),
-          paymentInfo: session.id,
-        });
-        console.log("✅ Order created:", order._id);
-
-        // Update stock
-        for (let i of order.items) {
-          const product = await Product.findById(i.product);
-          if (product) {
-            product.stock -= i.quantity;
-            product.sold += i.quantity;
-            await product.save();
-          }
-        }
-
-        // Clear cart
-        await Cart.deleteMany({ user: userId });
-        console.log("🎉 Order flow completed for session:", session.id);
-        break;
-      }
-
-      case "payment_intent.succeeded": {
-        const intent = event.data.object;
-        console.log("✅ PaymentIntent succeeded:", intent.id, "amount:", intent.amount);
-        break;
-      }
-
-      case "payment_intent.payment_failed": {
-        const intent = event.data.object;
-        console.warn("❌ PaymentIntent failed:", intent.id, "reason:", intent.last_payment_error?.message);
-        break;
-      }
-
-      default:
-        console.log(`⚠️ Unhandled event type: ${event.type}`);
-        break;
+  // Update stock
+  for (let i of order.items) {
+    const product = await Product.findById(i.product);
+    if (product) {
+      product.stock -= i.quantity;
+      product.sold += i.quantity;
+      await product.save();
     }
-
-    // ✅ Always respond quickly
-    res.json({ received: true });
-  } catch (error) {
-    console.error("❌ Error processing webhook:", error.message);
-    res.status(500).send("Internal Server Error");
-  }
-};
-
-// ================= STATUS CHECK =================
-export const getOrderStatus = TryCatch(async (req, res) => {
-  const { sessionId } = req.params;
-  const order = await Order.findOne({ paymentInfo: sessionId });
-
-  if (!order) {
-    console.warn("⚠️ Order not created yet for session:", sessionId);
-    return res.json({ success: false, reason: "Order not created yet" });
   }
 
-  console.log("🔹 Order found for session:", sessionId);
-  res.json({ success: true, order });
+  // Clear cart
+  await Cart.deleteMany({ user: userId });
+  console.log("🎉 Order flow completed for session:", session.id);
+  await sendOrderConfiramtion({
+    email: req.user.email,
+    subject: "Order confirmation",
+    orderId: order._id,
+    products: items,
+    totalAmount: subTotal,
+  });
+
+  return res.status(201).json({
+    success: true,
+    message: "Order created Successfully",
+    order,
+  });
 });
+
+
+
 
 // ================= STATS =================
 export const getStats = TryCatch(async (req, res) => {
-  if (req.user.role !== "admin")
-    return res.status(403).json({ message: "You are not admin" });
+  if (req.user.role !== "admin") {
+    return res.status(403).json({
+      message: "you are not admin",
+    });
+  }
+  const cod = await Order.find({ method: "cod" }).countDocuments();
+  const online = await Order.find({ method: "online" }).countDocuments();
 
-  const totalOrders = await Order.countDocuments();
-  const totalRevenue = await Order.aggregate([
-    { $group: { _id: null, total: { $sum: "$subTotal" } } },
-  ]);
+  const products = await Product.find();
 
-  console.log("🔹 Stats fetched: totalOrders =", totalOrders, ", totalRevenue =", totalRevenue[0]?.total || 0);
+  const data = products.map((prod) => ({
+    name: prod.title,
+    sold: prod.sold,
+  }));
+
   res.json({
-    totalOrders,
-    totalRevenue: totalRevenue[0]?.total || 0,
+    cod,
+    online,
+    data,
   });
 });

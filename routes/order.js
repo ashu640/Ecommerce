@@ -9,30 +9,28 @@ import {
   newOrderOnline,
   updateStatus,
   cancelOrder,
-  getOrderStatus,
-  stripeWebhook,
+  verifyStripePayment,
 } from "../controller/order.js";
 
 const router = express.Router();
 
-// ================== Create Orders ==================
-router.post("/order/new/cod", isAuth, newOrderCod);
-router.post("/order/new/online", isAuth, newOrderOnline);
 
-// ================== Get Orders ==================
+router.post("/order/new/cod", isAuth, newOrderCod);
 router.get("/order/all", isAuth, getAllOrders);
 router.get("/order/admin/all", isAuth, getAllOrdersAdmin);
+router.post("/order/verify/payment", isAuth, verifyStripePayment);
 router.get("/order/:id", isAuth, getMyOrder);
+router.post("/order/:id", isAuth, updateStatus);
+router.get("/stats", isAuth, getStats);
+router.post("/order/new/online", isAuth, newOrderOnline);
 
-// ================== Manage Orders ==================
-router.put("/order/:id/status", isAuth, updateStatus);
+
+
 router.post("/order/:id/cancel", isAuth, cancelOrder);
 
-// ================== Stats ==================
-router.get("/order/stats", isAuth, getStats);
 
 // ================== Payment Status ==================
-router.get("/order/status/:sessionId", isAuth, getOrderStatus);
+
 
 
 
