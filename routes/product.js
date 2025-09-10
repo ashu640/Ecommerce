@@ -30,6 +30,6 @@ router.get("/product/:id", getSingleProduct);
 router.put("/product/:id", isAuth, updateProduct);
 
 // UPDATE PRODUCT IMAGES
-router.put("/product/:id/images", isAuth, uploadFiles, updateProductImage);
+router.post("/product/:id", isAuth, uploadFiles, updateProductImage);
 
 export default router;
