@@ -1,6 +1,6 @@
 import {createTransport} from 'nodemailer'
 
-const sendOrderConfiramtion=async({email,subject,orderId,products,totalAmount})=>{
+const sendOrderConfiramtion=async({email,subject,orderId,products,totalAmount,name})=>{
     const transport=createTransport({
         host:"smtp.gmail.com",
         port:465,
@@ -75,7 +75,7 @@ const productsHtml = products
 <body>
     <div class="container">
         <h1>Order Confirmation</h1>
-        <p>Dear ${email},</p>
+        <p>Dear ${name},</p>
         <p>Your order (ID: <strong>${orderId}</strong>) has been successfully placed.</p>
         <table>
             <thead>
