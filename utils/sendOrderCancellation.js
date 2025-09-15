@@ -1,6 +1,6 @@
 import { createTransport } from "nodemailer";
 
-const sendOrderCancellation = async ({ email, subject, orderId, products, totalAmount,name }) => {
+const sendOrderCancellation = async ({ email, subject, orderId, products, totalAmount,name}) => {
   const transport = createTransport({
     host: "smtp.gmail.com",
     port: 465,
