@@ -157,6 +157,7 @@ export const updateStatus = TryCatch(async (req, res) => {
     }));
 
     await sendOrderCancellation({
+      name:order.address.fullName,
       email: order.user.email,
       subject: "Your order has been cancelled by admin",
       orderId: order._id,
@@ -343,6 +344,7 @@ export const verifyStripePayment = TryCatch(async (req, res) => {
   await Cart.deleteMany({ user: userId });
   console.log("🎉 Order flow completed for session:", session.id);
   await sendOrderConfiramtion({
+    name:order.address.fullName,
     email: req.user.email,
     subject: "Order confirmation",
     orderId: order._id,

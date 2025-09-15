@@ -1,6 +1,6 @@
 import { createTransport } from "nodemailer";
 
-const sendOrderCancellation = async ({ email, subject, orderId, products, totalAmount }) => {
+const sendOrderCancellation = async ({ email, subject, orderId, products, totalAmount,name }) => {
   const transport = createTransport({
     host: "smtp.gmail.com",
     port: 465,
@@ -75,7 +75,7 @@ const sendOrderCancellation = async ({ email, subject, orderId, products, totalA
 <body>
     <div class="container">
         <h1>Order Cancelled</h1>
-        <p>Dear ${email},</p>
+        <p>Dear ${name},</p>
         <p>We regret to inform you that your order (ID: <strong>${orderId}</strong>) has been cancelled.</p>
         <table>
             <thead>
