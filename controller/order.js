@@ -395,4 +395,5 @@ export const getLastOrderUpdate = TryCatch(async (req, res) => {
   const lastUpdatedOrder = await Order.findOne()
     .sort({ updatedAt: -1 })
     .select("updatedAt");
-})
+    res.json({ lastUpdate: lastUpdatedOrder?.updatedAt || null });
+});
