@@ -46,7 +46,8 @@ export const newOrderCod = TryCatch(async (req, res) => {
     items,
     method,
     user: req.user._id,
-    address: address._id,
+    name:address.fullName,
+    address: address.addressLine1,
     phone: address.phone,
     subTotal,
   });
@@ -65,6 +66,7 @@ export const newOrderCod = TryCatch(async (req, res) => {
   console.log("🗑️ Cart cleared after COD order");
 
   await sendOrderConfiramtion({
+    name:address.fullName,
     email: req.user.email,
     subject: "Order confirmation",
     orderId: order._id,
@@ -207,6 +209,7 @@ export const cancelOrder = TryCatch(async (req, res) => {
 
   // Send emails to user and admin
   await sendOrderCancellation({
+    name:order.address.fullName,
     email: order.user.email,
     subject: "Your order has been cancelled",
     orderId: order._id,
@@ -316,7 +319,8 @@ export const verifyStripePayment = TryCatch(async (req, res) => {
     items,
     method,
     user: userId,
-    address: addressId,
+    name: address.fullName,
+    address:address.addressLine1,
     phone: address?.phone || "",
     subTotal,
     paidAt: new Date(),
@@ -379,3 +383,14 @@ export const getStats = TryCatch(async (req, res) => {
     data,
   });
 });
+
+export const getLastOrderUpdate = TryCatch(async (req, res) => {
+  if (req.user.role !== "admin") {
+    return res.status(403).json({ message: "you are not admin" });
+  }
+
+  // Get the latest updated order
+  const lastUpdatedOrder = await Order.findOne()
+    .sort({ updatedAt: -1 })
+    .select("updatedAt");
+})

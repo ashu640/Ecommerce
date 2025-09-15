@@ -10,6 +10,7 @@ import {
   updateStatus,
   cancelOrder,
   verifyStripePayment,
+  getLastOrderUpdate
 } from "../controller/order.js";
 
 const router = express.Router();
@@ -23,6 +24,7 @@ router.get("/order/:id", isAuth, getMyOrder);
 router.post("/order/:id", isAuth, updateStatus);
 router.get("/stats", isAuth, getStats);
 router.post("/order/new/online", isAuth, newOrderOnline);
+router.get("/orders/admin/last-update", isAuth, getLastOrderUpdate);
 
 
 

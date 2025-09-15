@@ -323,3 +323,10 @@ export const autocompleteAuthors = TryCatch(async (req, res) => {
 
   res.json(authors);
 });
+
+// 👉 New: Distinct authors list
+export const getDistinctAuthors = TryCatch(async (req, res) => {
+  const { lang = "en" } = req.query;
+  const authors = await Product.distinct(`author.${lang}`);
+  res.json(authors.filter(Boolean));
+});
