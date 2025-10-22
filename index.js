@@ -7,11 +7,14 @@ import axios from "axios";
 import cookieParser from "cookie-parser";
 import morgan from "morgan";
 
+// --------------------------------------
+// 🔹 1️⃣ Load environment variables
+// --------------------------------------
 dotenv.config();
 
-// ---------------------------
-// 🔹 1️⃣ Configure Cloudinary
-// ---------------------------
+// --------------------------------------
+// 🔹 2️⃣ Cloudinary Configuration
+// --------------------------------------
 cloudinary.v2.config({
   cloud_name: process.env.CLOUD_NAME,
   api_key: process.env.CLOUD_API_KEY,
@@ -20,10 +23,9 @@ cloudinary.v2.config({
 
 const app = express();
 
-// ---------------------------
-// 🔹 2️⃣ Core middlewares (must come first)
-// ---------------------------
-app.use(morgan("dev")); // Logs method, route, status, time
+// --------------------------------------
+// 🔹 3️⃣ Core Middlewares
+// --------------------------------------
 app.use(express.json());
 app.use(cookieParser());
 app.use(
@@ -34,32 +36,36 @@ app.use(
     credentials: true,
   })
 );
+app.use(morgan("dev")); // logs basic requests info
 
-// ---------------------------
-// 🔹 3️⃣ Custom request/response logger
-// ---------------------------
+// --------------------------------------
+// 🔹 4️⃣ Custom Logger (for body + response)
+// --------------------------------------
 app.use((req, res, next) => {
-  console.log(
-    `\n🕒 [${new Date().toLocaleString()}] ${req.method} ${req.originalUrl}`
-  );
+  console.log(`\n🕒 [${new Date().toLocaleString()}] ${req.method} ${req.originalUrl}`);
 
   if (Object.keys(req.body).length > 0) {
     console.log("📦 Request Body:", req.body);
   }
 
-  // Capture and log response
-  const oldSend = res.send;
-  res.send = function (data) {
-    console.log(`✅ Response for ${req.method} ${req.originalUrl}:`, data);
-    oldSend.apply(res, arguments);
+  const oldSend = res.send.bind(res);
+  res.send = (data) => {
+    try {
+      // Only log small responses to avoid console flooding
+      const output = typeof data === "string" && data.length < 500 ? data : "[Large Response]";
+      console.log(`✅ Response for ${req.method} ${req.originalUrl}:`, output);
+    } catch (e) {
+      console.error("❌ Error logging response:", e.message);
+    }
+    return oldSend(data);
   };
 
   next();
 });
 
-// ---------------------------
-// 🔹 4️⃣ Import & use routes
-// ---------------------------
+// --------------------------------------
+// 🔹 5️⃣ Import Routes
+// --------------------------------------
 import userRoutes from "./routes/user.js";
 import productRoutes from "./routes/product.js";
 import cartRoutes from "./routes/cart.js";
@@ -67,6 +73,9 @@ import addressRoutes from "./routes/address.js";
 import orderRoutes from "./routes/order.js";
 import catalogueRoutes from "./routes/catalogue.js";
 
+// --------------------------------------
+// 🔹 6️⃣ Mount Routes
+// --------------------------------------
 app.use("/api", userRoutes);
 app.use("/api", productRoutes);
 app.use("/api", cartRoutes);
@@ -74,20 +83,21 @@ app.use("/api", addressRoutes);
 app.use("/api", orderRoutes);
 app.use("/api", catalogueRoutes);
 
-// ---------------------------
-// 🔹 5️⃣ Error handling middleware (must be last)
-// ---------------------------
+// --------------------------------------
+// 🔹 7️⃣ Error Handler (must be last)
+// --------------------------------------
 app.use((err, req, res, next) => {
   console.error(
     `❌ [${new Date().toLocaleString()}] Error on ${req.method} ${req.originalUrl}:`,
-    err.message
+    err.stack || err.message
   );
-  res.status(500).json({ error: err.message });
+  if (res.headersSent) return next(err);
+  res.status(500).json({ success: false, error: err.message });
 });
 
-// ---------------------------
-// 🔹 6️⃣ Start the server
-// ---------------------------
+// --------------------------------------
+// 🔹 8️⃣ Start Server
+// --------------------------------------
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`🚀 Server running on http://localhost:${port}`);
