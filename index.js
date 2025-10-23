@@ -44,14 +44,14 @@ app.use(morgan("dev")); // logs basic requests info
 app.use((req, res, next) => {
   console.log(`\n🕒 [${new Date().toLocaleString()}] ${req.method} ${req.originalUrl}`);
 
-  if (Object.keys(req.body).length > 0) {
+  // ✅ Safe check to avoid "Cannot convert undefined or null to object"
+  if (req.body && typeof req.body === "object" && Object.keys(req.body).length > 0) {
     console.log("📦 Request Body:", req.body);
   }
 
   const oldSend = res.send.bind(res);
   res.send = (data) => {
     try {
-      // Only log small responses to avoid console flooding
       const output = typeof data === "string" && data.length < 500 ? data : "[Large Response]";
       console.log(`✅ Response for ${req.method} ${req.originalUrl}:`, output);
     } catch (e) {
@@ -64,7 +64,12 @@ app.use((req, res, next) => {
 });
 
 // --------------------------------------
-// 🔹 5️⃣ Import Routes
+// 🔹 5️⃣ Ignore Favicon Request
+// --------------------------------------
+app.get("/favicon.ico", (req, res) => res.status(204).end());
+
+// --------------------------------------
+// 🔹 6️⃣ Import Routes
 // --------------------------------------
 import userRoutes from "./routes/user.js";
 import productRoutes from "./routes/product.js";
@@ -74,7 +79,7 @@ import orderRoutes from "./routes/order.js";
 import catalogueRoutes from "./routes/catalogue.js";
 
 // --------------------------------------
-// 🔹 6️⃣ Mount Routes
+// 🔹 7️⃣ Mount Routes
 // --------------------------------------
 app.use("/api", userRoutes);
 app.use("/api", productRoutes);
@@ -84,7 +89,7 @@ app.use("/api", orderRoutes);
 app.use("/api", catalogueRoutes);
 
 // --------------------------------------
-// 🔹 7️⃣ Error Handler (must be last)
+// 🔹 8️⃣ Error Handler (must be last)
 // --------------------------------------
 app.use((err, req, res, next) => {
   console.error(
@@ -96,7 +101,7 @@ app.use((err, req, res, next) => {
 });
 
 // --------------------------------------
-// 🔹 8️⃣ Start Server
+// 🔹 9️⃣ Start Server
 // --------------------------------------
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
