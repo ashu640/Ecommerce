@@ -12,12 +12,18 @@ export const loginUser=TryCatch(async(req,res)=>{
         email,
 
     });
+    console.log("email received",email);
     if(prevOtp){
         await prevOtp.deleteOne();
 
     }
+    console.log("sending email");
+
     await sendOtp({email,subject,otp});
+    console.log("email sent");
     await OTP.create({email,otp});
+    console.log("all ok");
+    
     res.json({
         message:"OTP send to your mail"
     })
